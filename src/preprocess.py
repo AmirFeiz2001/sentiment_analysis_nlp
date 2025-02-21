@@ -1,34 +1,62 @@
-import string
-from nltk.tokenize import word_tokenize
-import nltk
+from hazm import Normalizer, word_tokenize
+import pandas as pd
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
+from collections import Counter
+import os
 
-nltk.download('punkt', quiet=True)
+def load_data(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return pd.read_csv(f, delimiter=',', encoding='utf-8')
+    except Exception as e:
+        print(f"Error loading data: {e}")
+        return None
 
-def preprocess_text(text, stop_words=None):
-    # Convert to lowercase
-    lower_case = text.lower()
-    
-    # Remove punctuation
-    cleaned_text = lower_case.translate(str.maketrans('', '', string.punctuation))
-    
+def preprocess_dataframe(df):
+
+    train = df.rename(columns={df.columns[0]: 'text'})
+    # لیبل گذاری به صورت دستی
+    labels = ['0','1','0','1','0','1','1','0','1','1','0','0','0','1','1','1','1','0','1','0',
+              '1','1','1','1','1','1','1','1','1','1','0','1','1','1','0','1','0','1','1','1',
+              '1','0','1','0','0','1','1','0','1','0','0','1','0','0','1','1','1','1','1','0',
+              '0','1','1','1','1','1','1','1','1','1','1','1','1','0','0','1','1','1','1','0',
+              '0','1','1','0','1','1','1','1','1','1','1','1','1','0','1','0','1','1','0','1','1']
+    train['target'] = [int(label) for label in labels[:len(train)]]
+    return train
+
+def counter_word(text):
+    count = Counter()
+    for sentence in text:
+        for word in word_tokenize(sentence):
+            count[word] += 1
+    return count
+
+def prepare_data(df, train_size_ratio=0.8, max_length=20):
+    text = df['text']
+    counter = counter_word(text)
+    num_words = len(counter)
+
+    train_size = int(len(df) * train_size_ratio)
+    train_sentences = df['text'][:train_size]
+    train_labels = df['target'][:train_size]
+    test_sentences = df['text'][train_size:]
+    test_labels = df['target'][train_size:]
+
     # Tokenize
-    tokenized_words = word_tokenize(cleaned_text, "english")
-    
-    # Remove stop words if provided
-    if stop_words:
-        return [word for word in tokenized_words if word not in stop_words]
-    return tokenized_words
+    tokenizer = Tokenizer(num_words=num_words)
+    tokenizer.fit_on_texts(train_sentences)
+    train_sequences = tokenizer.texts_to_sequences(train_sentences)
+    test_sequences = tokenizer.texts_to_sequences(test_sentences)
 
-def load_stop_words():
-    return [
-        "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours", "yourself",
-        "yourselves", "he", "him", "his", "himself", "she", "her", "hers", "herself", "it", "its", "itself",
-        "they", "them", "their", "theirs", "themselves", "what", "which", "who", "whom", "this", "that", "these",
-        "those", "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having", "do",
-        "does", "did", "doing", "a", "an", "the", "and", "but", "if", "or", "because", "as", "until", "while",
-        "of", "at", "by", "for", "with", "about", "against", "between", "into", "through", "during", "before",
-        "after", "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under", "again",
-        "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each",
-        "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than",
-        "too", "very", "s", "t", "can", "will", "just", "don", "should", "now"
-    ]
+    # Pad sequences
+    train_padded = pad_sequences(train_sequences, maxlen=max_length, padding='post', truncating='post')
+    test_padded = pad_sequences(test_sequences, maxlen=max_length, padding='post', truncating='post')
+
+    return train_padded, test_padded, train_labels, test_labels, tokenizer, num_words
+
+def preprocess_user_input(text_list, tokenizer, max_length=20):
+    normalizer = Normalizer()
+    normalized_texts = [normalizer.normalize(text) for text in text_list]
+    sequences = tokenizer.texts_to_sequences(normalized_texts)
+    return pad_sequences(sequences, maxlen=max_length, padding='post', truncating='post')
